@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>梯度下降法：从直觉到通信应用</title>
+  <style>
+    :root { color-scheme: light; --ink:#17252a; --muted:#56666b; --paper:#f6f8f6; --white:#fff; --line:#d8e1dd; --teal:#087e78; --teal-light:#d9efea; --orange:#bd5d22; --blue:#386a9b; --red:#b33d3d; --shadow:0 10px 28px rgba(24,48,48,.07); }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.72 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; }
+    main { max-width:1000px; margin:auto; padding:34px 22px 70px; }
+    h1,h2,h3 { line-height:1.35; margin:0 0 14px; }
+    h1 { font-size:clamp(30px,5vw,46px); max-width:760px; }
+    h2 { font-size:27px; margin-top:42px; padding-top:22px; border-top:1px solid var(--line); }
+    h3 { font-size:19px; margin-top:22px; }
+    p { margin:10px 0 14px; }
+    .eyebrow { color:var(--teal); font-size:13px; font-weight:700; }
+    .intro { color:var(--muted); max-width:760px; font-size:18px; }
+    .lead { font-size:19px; }
+    .callout { border-left:4px solid var(--teal); padding:12px 16px; margin:18px 0; background:#eaf4f1; border-radius:0 6px 6px 0; }
+    .formula { overflow-x:auto; padding:17px 18px; background:#fff; border:1px solid var(--line); border-radius:6px; font:18px/1.8 "Cambria Math", Cambria, serif; }
+    .formula strong { color:var(--teal); }
+    .cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+    .plain-panel { padding:0 0 4px; }
+    .chart-shell { background:var(--white); border:1px solid var(--line); border-radius:8px; padding:14px; margin:18px 0; box-shadow:var(--shadow); }
+    .controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 22px; align-items:end; }
+    label { display:grid; gap:4px; font-weight:600; }
+    input[type=range] { width:100%; accent-color:var(--teal); }
+    .value { color:var(--teal); font-variant-numeric:tabular-nums; }
+    .plot { width:100%; display:block; height:auto; }
+    .readout { display:flex; flex-wrap:wrap; gap:8px 24px; border-top:1px solid var(--line); padding-top:12px; font-variant-numeric:tabular-nums; }
+    .readout b { color:var(--teal); }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; margin:14px 0; background:white; }
+    th,td { border-bottom:1px solid var(--line); text-align:left; padding:10px 12px; vertical-align:top; }
+    th { background:#eaf0ed; }
+    code { background:#e9efec; padding:1px 5px; border-radius:3px; }
+    .tag { display:inline-block; padding:1px 8px; border-radius:4px; background:#e4eeeb; color:#225d57; font-size:14px; }
+    .steps { counter-reset:step; list-style:none; padding:0; }
+    .steps li { counter-increment:step; padding:7px 0 7px 42px; position:relative; }
+    .steps li:before { content:counter(step); position:absolute; left:0; top:7px; width:28px; height:28px; line-height:28px; text-align:center; background:var(--teal-light); border-radius:50%; color:#075b56; font-weight:700; }
+    details { border-bottom:1px solid var(--line); padding:10px 0; }
+    summary { cursor:pointer; font-weight:700; }
+    .answer { color:var(--muted); }
+    .small { color:var(--muted); font-size:14px; }
+    @media(max-width:650px) { main {padding:24px 16px 50px} .cols,.controls {grid-template-columns:1fr} h2 {font-size:23px} .chart-shell {padding:8px} }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">通信算法入门 · 核心优化方法</div>
+    <h1>梯度下降法：让参数一步步走向更好的答案</h1>
+    <p class="intro">把它想成在雾里的山坡上找最低点：你看不见整座山，只能摸清脚下坡面朝哪边倾斜，然后朝下坡方向走一小步，再观察、再走。</p>
+    <div class="callout"><strong>这门课的目标：</strong>你不需要先会微积分。我们会先解释每个词，再从一个“调音旋钮”的例子出发，最后才写公式。读完后，你应该能用自己的话解释：损失函数是什么、导数告诉我们什么、学习率为什么存在，以及 GD 如何用于通信。</div>
+  </header>
+
+  <h2>1. 先认识名字和任务</h2>
+  <h3>算法的英文全名</h3>
+  <p><strong>梯度下降法</strong>的英文是 <strong>Gradient Descent</strong>，简称 <strong>GD</strong>。</p>
+  <ul>
+    <li><strong>Gradient（梯度）</strong>：在当前位置，告诉我们“往各个方向走时，结果变坏得有多快”。一维时它就是导数；多维时它是一组导数组成的箭头。</li>
+    <li><strong>Descent（下降）</strong>：我们真正想让“错误程度”下降，所以朝梯度的反方向走。</li>
+    <li><strong>Method/Algorithm（方法/算法）</strong>：一套明确、可重复执行的步骤，不是一个神秘的黑箱。</li>
+  </ul>
+  <h3>GD 到底要解决什么问题？</h3>
+  <p>给定一个可以调整的参数，找到一组参数，让某个“评分”尽可能小。这个评分通常叫<strong>损失函数</strong>（loss function）或<strong>目标函数</strong>（objective function）。</p>
+  <div class="callout"><strong>生活类比：</strong>你在调收音机旋钮，目标是让噪声最小。旋钮的位置叫“参数”；当前听到的噪声分数叫“损失”；调一次旋钮、重新测量，再继续调，就是一个优化过程。GD 是决定“往哪边调、调多少”的规则。</div>
+
+  <h2>2. 三个必须先懂的词</h2>
+  <h3>2.1 参数（parameter）是什么？</h3>
+  <p>参数就是算法可以改变的数字。在收音机类比中，旋钮角度是参数；在通信均衡器中，每个抽头的权重是参数；在模型中，参数可能有成千上万个。记作 <i>w</i> 或 <i>θ</i>（theta）。</p>
+  <h3>2.2 损失函数（loss function）是什么？</h3>
+  <p>损失函数是一把“错误尺子”：把预测结果和正确答案比较，输出一个数字。数字越小，说明预测越接近正确答案。它不是损失了什么实物，而是“错误程度”的数学表示。</p>
+  <p>例如，正确温度是 20°C，预测是 18°C，误差是 −2。常用的<strong>平方误差</strong>是：</p>
+  <div class="formula">损失 = 误差² = (预测 − 正确答案)² = (18 − 20)² = 4</div>
+  <p>预测 19°C 时损失是 1，预测 15°C 时损失是 25，因此离答案越远，惩罚越大。多个样本通常取平均，叫<strong>均方误差</strong>（MSE, Mean Squared Error）。</p>
+  <h3>2.3 学习率（learning rate）是什么？</h3>
+  <p>学习率记作 <i>η</i>（读作 eta），是一个人为设置的<strong>步长缩放系数</strong>。它回答：“根据当前坡度，我实际走多远？”</p>
+  <p>导数很大，表示坡很陡，但不等于一定要走很远；导数很小，表示坡很平，但也不代表完全不动。学习率把“坡度信号”统一缩放：</p>
+  <div class="formula">实际移动量 = 学习率 η × 导数的大小</div>
+  <p>η 太小，像每次只挪一毫米，安全但慢；η 太大，像迈大步冲下山，可能跨过最低点；合适的 η 才能稳定前进。</p>
+
+  <h2>3. 导数是什么？为什么它能指路？</h2>
+  <p>导数可以先理解为<strong>某一点的瞬时斜率</strong>，也就是“参数稍微改变一点，损失会怎样改变”。不用一开始就把它当成复杂公式。</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>导数的符号</th><th>直觉</th><th>要让损失下降，参数应往哪边走？</th></tr></thead>
+    <tbody>
+      <tr><td>正数</td><td>参数往右，损失会上升</td><td>往左（减小参数）</td></tr>
+      <tr><td>负数</td><td>参数往右，损失会下降</td><td>往右（增大参数）</td></tr>
+      <tr><td>接近 0</td><td>当前位置附近比较平</td><td>小心判断，可能接近最低点、最高点或平台</td></tr>
+    </tbody>
+  </table></div>
+  <h3>为什么“导数 × 学习率”就是前进步长？</h3>
+  <p>因为导数同时提供两件信息：<strong>符号</strong>提供方向，<strong>绝对值</strong>提供局部坡度大小。我们希望坡陡时多修正一点、坡平时少修正一点，于是用“导数的大小”作为自适应的步长信号，再用学习率控制整体尺度。</p>
+  <p>例如当前位置导数为 +5，η=0.1：</p>
+  <div class="formula">更新量 = −η×导数 = −0.1×5 = −0.5</div>
+  <p>负号让我们向左走 0.5。若导数为 −2，则更新量为 +0.2，向右走 0.2。这里不是“盲目把导数当距离”，而是把局部变化率转成一个经过 η 缩放的建议移动量。</p>
+
+  <h2>4. 先用一维小山建立直觉</h2>
+  <p>现在再看一个简单的损失函数：<i>J(w)=(w−3)²</i>。这里 <i>w</i> 是唯一参数，<i>J</i> 是损失；最低点在 <i>w=3</i>。算法不知道答案，只能从起点出发，测斜率、走一步、重新测量。</p>
+  <div class="chart-shell">
+    <div class="controls">
+      <label>学习率 η：<span class="value" id="lrText"></span><input id="lr" type="range" min="0.01" max="1.05" step="0.01" value="0.25"></label>
+      <label>起点 w₀：<span class="value" id="startText"></span><input id="start" type="range" min="-2" max="8" step="0.1" value="8"></label>
+    </div>
+    <svg class="plot" id="plot" viewBox="0 0 760 340" role="img" aria-label="抛物线损失函数上的梯度下降迭代轨迹"></svg>
+    <div class="readout" aria-live="polite"><span>当前迭代：<b id="iterOut"></b></span><span>当前参数：<b id="wOut"></b></span><span>当前损失：<b id="jOut"></b></span><span id="behavior"></span></div>
+    <p class="small">拖动学习率观察步子大小：较小会稳但慢；合适时快速靠近底部；过大时会越过最低点，甚至来回发散。蓝色点是每次参数更新的位置。</p>
+  </div>
+  <p>在这个例子里，斜率是 <i>dJ/dw=2(w−3)</i>。比如从 <i>w=8</i> 出发，斜率为 10，说明向右上坡很陡；反方向是左边。若学习率 η=0.25：</p>
+  <div class="formula">w₁ = w₀ − η · (dJ/dw)|<sub>w₀</sub> = 8 − 0.25 × 10 = 5.5</div>
+  <p>到 5.5 后重新计算斜率，而不是一直沿用 10。下一步斜率为 5，所以 <i>w₂=5.5−0.25×5=4.25</i>。步子会随着坡变缓而变小，逐渐接近 3。</p>
+
+  <h2>5. GD 的核心公式逐项翻译</h2>
+  <div class="formula"><strong>θ<sub>t+1</sub> = θ<sub>t</sub> − η ∇J(θ<sub>t</sub>)</strong></div>
+  <p>把它读成一句中文：</p>
+  <div class="callout"><strong>下一次参数 = 这一次参数 − 学习率 × 当前梯度。</strong><br><i>θ</i> 可以是一个数，也可以是一组参数；下标 <i>t</i> 表示第几次迭代；<i>∇J</i>（读作 nabla J）就是梯度，即每个参数对应的导数组成的箭头；负号表示逆着上坡方向走。</div>
+  <div class="cols">
+    <section class="plain-panel"><h3>多参数时的“坡度”</h3><p>若 <i>θ=[w₁,w₂]</i>，梯度是 <i>[∂J/∂w₁, ∂J/∂w₂]</i>。它指向二维地形中上升最快的方向；取负号，就得到最陡下降方向。更新时每个参数都用自己的偏导数：</p><div class="formula">w₁ ← w₁ − η ∂J/∂w₁<br>w₂ ← w₂ − η ∂J/∂w₂</div></section>
+    <section class="plain-panel"><h3>为什么梯度是“最快上坡”</h3><p>在当前位置附近，损失变化近似为 <i>ΔJ ≈ ∇J·Δθ</i>。若步长长度固定，要让这个内积最小（也就是让损失下降最多），Δθ 应与梯度反向。因此负梯度是局部最快下降方向。</p><p class="small">“局部”很重要：它只保证当前位置附近的趋势，不保证一步就到全局最低点。</p></section>
+  </div>
+
+  <h2>6. 它如何出现在通信系统里</h2>
+  <p>通信里常见的任务是调一组参数，让接收信号经过处理后尽可能接近已知训练符号。梯度下降就是一个通用的“调参器”。</p>
+  <h3>例子：用自适应均衡器减小误差</h3>
+  <p>多径信道会让符号互相干扰。线性均衡器用一串抽头系数 <i>w</i> 对接收信号做加权，产生估计输出 <i>y[n]=wᵀx[n]</i>。训练阶段有已知目标符号 <i>d[n]</i>，定义误差 <i>e[n]=d[n]−y[n]</i>，目标是让平均平方误差尽量小：</p>
+  <div class="formula">J(w) = E{|e[n]|²} = E{|d[n] − wᵀx[n]|²}</div>
+  <p>对复数基带信号，常见形式会写成 <i>y[n]=wᴴx[n]</i>，具体梯度表达式会依赖复数微分约定；实数情况下，单个样本的平方误差 <i>e²</i> 对权重的梯度为 <i>−2e x</i>。代入“参数减去学习率乘梯度”，得到：</p>
+  <div class="formula">w ← w − η(−2e x) = w + 2η e x</div>
+  <p>这就是 LMS（最小均方）更新的基本形状：当前误差越大、输入分量越强，对抽头的修正通常越明显。LMS 可以看作对均方误差梯度使用当前样本得到的随机/在线梯度下降；它不是每次都精确计算整个数据分布的平均梯度。</p>
+  <div class="callout"><strong>直觉对照：</strong>均衡器权重是“要调的旋钮”；训练符号是标准答案；误差是当前偏差；梯度指出每个旋钮应往哪边调；学习率决定调得多猛。</div>
+  <h3>另外两个常见通信用途</h3>
+  <ul>
+    <li><strong>信道估计：</strong>调节信道参数，使预测接收信号与实际观测的残差平方和最小。</li>
+    <li><strong>检测与波束赋形：</strong>调节检测器或阵列权重，以降低误码相关损失、干扰功率或其他设计目标。</li>
+  </ul>
+
+  <h2>7. 一次完整的梯度下降循环</h2>
+  <ol class="steps">
+    <li><strong>定义目标：</strong>说清楚什么叫“好”，写成损失函数 <i>J(θ)</i>。</li>
+    <li><strong>初始化参数：</strong>选一个起点 θ₀。不同起点可能走向不同的局部解。</li>
+    <li><strong>算梯度：</strong>求每个参数对应的偏导数，或用一个/一批样本估计梯度。</li>
+    <li><strong>更新参数：</strong>θ ← θ − η∇J(θ)。注意所有梯度都在旧参数位置计算，再一起更新。</li>
+    <li><strong>检查停止条件：</strong>达到迭代上限、损失变化很小、梯度范数很小，或验证指标不再改善时停止。</li>
+  </ol>
+
+  <h2>8. 学习率：最重要的旋钮</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>学习率情况</th><th>图上现象</th><th>实际表现</th><th>常见处理</th></tr></thead>
+    <tbody>
+      <tr><td>太小</td><td>每一步挪得很短</td><td>稳定但收敛慢，训练时间长</td><td>适当调大；或用衰减策略先快后稳</td></tr>
+      <tr><td>合适</td><td>稳定地靠近谷底</td><td>下降快且没有明显震荡</td><td>监控训练与验证损失</td></tr>
+      <tr><td>太大</td><td>越过谷底、左右跳动</td><td>震荡、损失升高，甚至发散</td><td>调小学习率；检查特征尺度与梯度</td></tr>
+    </tbody>
+  </table></div>
+  <p>对前面的碗形函数，更新误差满足 <i>w<sub>t+1</sub>−3=(1−2η)(w<sub>t</sub>−3)</i>。所以当 <i>0&lt;η&lt;1</i> 时会收敛；<i>0&lt;η&lt;0.5</i> 通常从同一侧靠近，<i>0.5&lt;η&lt;1</i> 会在两侧交替但振幅缩小；η≥1 则不会收敛。这个阈值是本例特定的，真实问题的安全学习率取决于损失曲率与数据尺度。</p>
+
+  <h2>9. 梯度下降的几种版本</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>名称</th><th>每次用哪些数据</th><th>优缺点</th></tr></thead>
+    <tbody>
+      <tr><td>批量梯度下降</td><td>整个训练集</td><td>方向较稳定；数据量大时每一步计算重</td></tr>
+      <tr><td>随机梯度下降（SGD）</td><td>一个样本</td><td>更新快、可在线处理；噪声大，轨迹会抖动</td></tr>
+      <tr><td>小批量梯度下降</td><td>一小批样本</td><td>稳定性与计算效率折中；工程中很常用</td></tr>
+    </tbody>
+  </table></div>
+  <p>通信接收机逐个新样本更新权重时，非常自然地落在在线/随机梯度的范畴；把很多训练样本组成一批再求平均梯度，则是小批量版本。</p>
+
+  <h2>10. 常见误区与排查</h2>
+  <ul>
+    <li><strong>把梯度方向当成下降方向：</strong>梯度是上升最快方向，更新式前面有减号。</li>
+    <li><strong>以为梯度为零一定是最小值：</strong>也可能是局部最大值或鞍点；要结合损失地形判断。</li>
+    <li><strong>每次更新一个参数后就重算下一个偏导：</strong>标准梯度下降通常先在同一个旧参数点算完整梯度，再同步更新。</li>
+    <li><strong>损失变大就盲目加迭代：</strong>先检查学习率是否过大、梯度符号/公式是否写错、输入尺度是否差异过大。</li>
+    <li><strong>只看训练损失：</strong>优化目标下降不代表泛化更好；通信系统要结合验证数据、误码率（BER）、均方误差（MSE）等任务指标。</li>
+  </ul>
+  <p>实用的数值排查：在一个小问题上用有限差分估计某参数的导数：<i>[J(θ+ε)−J(θ−ε)]/(2ε)</i>，与代码中的解析梯度比较。两者严重不一致，常说明梯度实现有误。</p>
+
+  <h2>11. 自测：确认你真的会了</h2>
+  <details><summary>题 1：若当前位置的导数是 −4，学习率 η=0.1，参数应怎样变化？</summary><p class="answer">更新量是 <i>−η×导数=−0.1×(−4)=+0.4</i>，所以参数增加 0.4。负导数说明往右走会让损失下降。</p></details>
+  <details><summary>题 2：为什么在最低点附近，大学习率更容易震荡？</summary><p class="answer">最低点两边的梯度方向相反。步子过大就会跨过谷底到另一侧，下一次又被相反梯度推回来；若修正持续过猛，振幅会变大而发散。</p></details>
+  <details><summary>题 3：均衡器中误差 e=0 时，LMS 为什么不更新权重？</summary><p class="answer">当前输出已经等于目标，单样本梯度项与 e 成正比，因此为零。这一时刻该样本不给权重提供修正信号。</p></details>
+  <details><summary>题 4：GD 和 LMS 是什么关系？</summary><p class="answer">GD 是按目标函数梯度更新参数的总框架。LMS 用当前样本误差构造均方误差的随机梯度，是这一框架在自适应滤波/均衡中的在线实现。</p></details>
+
+  <h2>12. 最后用三句话复述</h2>
+  <ol>
+    <li>先定义一个衡量错误程度的损失函数。</li>
+    <li>梯度告诉我每个参数往哪边会让损失上升最快。</li>
+    <li>我按“参数减去学习率乘梯度”反向走，并重复计算，直到足够好或停止条件满足。</li>
+  </ol>
+  <p class="callout"><strong>掌握标准：</strong>如果你能自己写出更新式、解释负号与学习率、手算一次更新，并把均衡器权重对应到参数 θ、均方误差对应到损失 J、LMS 更新对应到随机梯度，那么你已经掌握了梯度下降的核心。下一步可以练习推导线性回归/MSE 的梯度，再实现一个小型 LMS 均衡器。</p>
+</main>
+<script>
+  const lr = document.getElementById('lr');
+  const start = document.getElementById('start');
+  const svg = document.getElementById('plot');
+  const NS = 'http://www.w3.org/2000/svg';
+  function node(tag, attrs = {}, parent = svg) {
+    const el = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+    parent.appendChild(el); return el;
+  }
+  function draw() {
+    const eta = Number(lr.value), initial = Number(start.value);
+    document.getElementById('lrText').textContent = eta.toFixed(2);
+    document.getElementById('startText').textContent = initial.toFixed(1);
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const left=58, right=735, top=28, bottom=278, xmin=-2, xmax=8, ymax=26;
+    const X = w => left + (w-xmin)/(xmax-xmin)*(right-left);
+    const Y = j => bottom - j/ymax*(bottom-top);
+    node('rect',{x:left,y:top,width:right-left,height:bottom-top,fill:'#fbfdfc',stroke:'#d8e1dd','stroke-width':'1'});
+    [0,1,2,3,4,5,6,7,8].forEach(w=>{
+      const x=X(w); node('line',{x1:x,y1:top,x2:x,y2:bottom,stroke:'#e6ece9','stroke-width':'1'});
+      const t=node('text',{x,y:bottom+21,'text-anchor':'middle',fill:'#56666b','font-size':'12'}); t.textContent=w;
+    });
+    [0,5,10,15,20,25].forEach(j=>{
+      const y=Y(j); node('line',{x1:left,y1:y,x2:right,y2:y,stroke:'#e6ece9','stroke-width':'1'});
+      const t=node('text',{x:left-10,y:y+4,'text-anchor':'end',fill:'#56666b','font-size':'12'}); t.textContent=j;
+    });
+    let curve=''; for(let i=0;i<=160;i++){const w=xmin+(xmax-xmin)*i/160,j=(w-3)**2;curve+=(i?'L':'M')+X(w).toFixed(2)+','+Y(j).toFixed(2)}
+    node('path',{d:curve,fill:'none',stroke:'#087e78','stroke-width':'3'});
+    const xt=node('text',{x:(left+right)/2,y:330,'text-anchor':'middle',fill:'#17252a','font-size':'14'}); xt.textContent='参数 w';
+    const yt=node('text',{x:16,y:(top+bottom)/2,transform:`rotate(-90 16 ${(top+bottom)/2})`,'text-anchor':'middle',fill:'#17252a','font-size':'14'}); yt.textContent='损失 J(w)';
+    let w=initial, points=[];
+    for(let i=0;i<35;i++){
+      const j=(w-3)**2;
+      if(Number.isFinite(w)&&Math.abs(w)<30) points.push({w,j,i});
+      w=w-eta*2*(w-3);
+      if(!Number.isFinite(w)||Math.abs(w)>30) break;
+      if(Math.abs(w-3)<0.015){points.push({w,j:(w-3)**2,i:i+1});break;}
+    }
+    if(points.length){
+      const pts=points.map(p=>`${X(p.w)},${Y(Math.min(p.j,ymax))}`).join(' ');
+      node('polyline',{points:pts,fill:'none',stroke:'#bd5d22','stroke-width':'1.8','stroke-dasharray':'4 4'});
+      points.forEach((p,i)=>node('circle',{cx:X(p.w),cy:Y(Math.min(p.j,ymax)),r:i===0?'5':'4',fill:i===0?'#386a9b':'#bd5d22',stroke:'#fff','stroke-width':'1.5'}));
+    }
+    node('circle',{cx:X(3),cy:Y(0),r:'6',fill:'#087e78'});
+    const minLabel=node('text',{x:X(3)+9,y:Y(0)-9,fill:'#087e78','font-size':'12'}); minLabel.textContent='最低点 w=3';
+    const last=points[points.length-1]||{w:initial,j:(initial-3)**2,i:0};
+    document.getElementById('iterOut').textContent=String(last.i);
+    document.getElementById('wOut').textContent=last.w.toFixed(4);
+    document.getElementById('jOut').textContent=last.j.toFixed(5);
+    let note='轨迹已绘出';
+    if(eta<0.12) note='步长较小：方向稳定，但靠近较慢';
+    else if(eta<0.5) note='通常平稳靠近最低点';
+    else if(eta<1) note='跨过最低点并逐渐收敛，可能震荡';
+    else note='此例中不收敛：步子过大';
+    document.getElementById('behavior').textContent=note;
+  }
+  lr.addEventListener('input',draw); start.addEventListener('input',draw); draw();
+</script>
+</body>
+</html>
